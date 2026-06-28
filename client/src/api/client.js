@@ -1,5 +1,6 @@
 export const extractData = async (file, schemaString) => {
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  // Remove trailing slash if present to prevent double-slashes causing 404s
+  const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
   
   const formData = new FormData();
   formData.append('file', file);
