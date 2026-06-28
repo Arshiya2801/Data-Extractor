@@ -18,6 +18,10 @@ app.use(morgan('dev'));
 
 app.use('/extract', extractRoutes);
 
+app.get('/', (req, res) => {
+  res.status(200).send('Document Extractor API is running.');
+});
+
 app.get('/health', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
   if (dbStatus === 'connected') {
