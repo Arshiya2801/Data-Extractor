@@ -7,6 +7,22 @@ A robust service to extract structured data from business documents (PDFs, Sprea
 - **Frontend (Web UI):** [https://your-vercel-app.vercel.app](https://your-vercel-app.vercel.app)
 - **Backend API:** [https://data-extractor-xd4r.onrender.com](https://data-extractor-xd4r.onrender.com)
 
+## How to Run Locally
+1. **Environment Setup:** Rename `server/.env.example` to `server/.env` and add your `MONGODB_URI` and `LLM_API_KEY` (e.g. OpenAI).
+2. **Start the Backend:**
+   ```bash
+   cd server
+   npm install
+   npm run dev
+   ```
+3. **Start the Frontend:**
+   ```bash
+   cd client
+   npm install
+   npm run dev
+   ```
+4. **Access the App:** Open `http://localhost:5173` in your browser.
+
 ## How to Call the Service
 
 The API exposes a single endpoint for data extraction: `POST /extract`. 
@@ -68,7 +84,7 @@ We included several specific test documents in the `test-documents/` folder to r
    - **Why chosen:** To prove the backend correctly routes spreadsheets to text-parsing (bypassing OCR entirely), and to test the LLM's ability to handle conditional logic and sorting.
    - **Data Description Used:** *"I want you to list the 3 top students with their max aggregate marks."*
 
-4. **`scanned pdf.pdf` (Image-based OCR Test)**
+4. **`scanned_pdf.pdf` (Image-based OCR Test)**
    - **Why chosen:** To test the fallback image-rendering pipeline. If a PDF doesn't have a digital text layer, the backend automatically renders the pages as images and passes them to the LLM's vision model.
    - **Data Description Used:** *"Extract the sender company name, the sender address, the date of the letter, the recipient's name and address, and the printed name of the person who signed it at the bottom."*
 
@@ -95,7 +111,13 @@ Every extracted field returns a `status`:
 - **Source Verification:** The LLM is forced to provide a `source_text` quote for every value it extracts. This prevents hallucinations, as it has to justify its extraction with an exact string from the document.
 - **Graceful Merging:** For multi-page PDFs, we process each page individually (to avoid context limits) and safely merge the results across pages. Array fields (like line items) are concatenated across pages, while single-value fields lock in the first "ok" result they find.
 
+## Assumptions & Handling Ambiguity
 
+The assignment prompt contained intentional ambiguities. Here is how I interpreted them and the engineering decisions I made:
+- **"Provide a schema or plain English description"**: It was ambiguous whether the end-user would actually know how to provide a strict JSON schema. I assumed the target audience (operations teams) wouldn't know how to write JSON. Therefore, I built an LLM-powered **Schema Compiler** that dynamically converts plain English into JSON on the fly, seamlessly supporting both input types.
+- **"Handle large documents"**: The prompt didn't specify *how* to handle large files against strict LLM context limits. I assumed that dumping massive documents (like our multi-page test PDF) into a single LLM prompt would cause severe hallucinations and context-loss. I designed a chunking system that processes documents page-by-page and safely merges arrays across pages.
+- **"Make it reliable"**: Reliability was left undefined. I assumed this meant the system must provide a **confidence contract** so downstream apps know exactly what requires human review. Thus, I implemented the `ok`, `missing`, and `low_confidence` per-field statuses, along with an auto-retry loop for Zod validation failures.
+- **"Frontend UI"**: The prompt didn't specify how the frontend should handle long wait times for large PDFs. I built the API with Synchronous Processing for simplicity, but I explicitly documented my architectural assumption that a real production app must use an asynchronous job queue (BullMQ/Redis) to prevent browser timeouts.
 
 
 
