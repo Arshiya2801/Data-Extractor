@@ -2,12 +2,17 @@
 
 A robust service to extract structured data from business documents (PDFs, Spreadsheets, Scans) based on flexible plain-English descriptions or strict JSON schemas.
 
+## Live Deployment
+
+- **Frontend (Web UI):** [https://your-vercel-app.vercel.app](https://your-vercel-app.vercel.app)
+- **Backend API:** [https://data-extractor-xd4r.onrender.com](https://data-extractor-xd4r.onrender.com)
+
 ## How to Call the Service
 
 The API exposes a single endpoint for data extraction: `POST /extract`. 
 It accepts `multipart/form-data` with two fields:
 - `file`: The document file (PDF, CSV, Excel, Image)
-- `schema`: A string. This can either be a plain English prompt (e.g. "Extract the top 3 students by math score") or a strict JSON schema array.
+- `schema`: A string. This can either be a plain English prompt (e.g. "Extract the top 3 students by math score") or a strict JSON schema array (e.g. `[{"name": "invoice_number", "type": "string", "required": true}]`).
 
 ### Example cURL Request
 
@@ -39,12 +44,42 @@ curl -X POST https://your-render-url.onrender.com/extract \
 }
 ```
 
+
 ## Input Format Rationale (English vs JSON)
 
 This API accepts **both** plain English descriptions and strict JSON schemas. 
 **Why?** Because operations teams usually don't know how to write JSON schemas, but they know exactly what data they want in plain English. 
 
 Under the hood, we use an LLM-powered **Schema Compiler**. If you provide plain English, the Schema Compiler translates your request into a strict Zod-compatible JSON schema *before* it processes the document. This gives us the best of both worlds: the usability of plain English for humans, and the strict structural guarantees of JSON for downstream systems.
+
+## Test Documents & Data Descriptions Used
+
+We included several specific test documents in the `test-documents/` folder to rigorously evaluate the pipeline across different formats, edge cases, and failure modes. Here is why each was chosen and the exact plain-English data description used to test them:
+
+1. **`invoice1.pdf` (Standard Digital PDF)**
+   - **Why chosen:** To test basic key-value extraction and the LLM's ability to pull structured line-item arrays from clean, standard business documents.
+   - **Data Description Used:** *"I need the invoice number, the vendor name, the total amount, and a list of all line items with their quantities and prices."*
+
+2. **`multipage pdf.pdf` (Academic/Project Report)**
+   - **Why chosen:** To test multi-page chunking, merging, and rate-limit handling on dense, text-heavy documents.
+   - **Data Description Used:** *"Extract the project title, the main problem it solves, a list of its primary use cases, and list the challenges in the existing platforms"*
+
+3. **`student_marks.csv` (Spreadsheet / Analytical Test)**
+   - **Why chosen:** To prove the backend correctly routes spreadsheets to text-parsing (bypassing OCR entirely), and to test the LLM's ability to handle conditional logic and sorting.
+   - **Data Description Used:** *"I want you to list the 3 top students with their max aggregate marks."*
+
+4. **`scanned pdf.pdf` (Image-based OCR Test)**
+   - **Why chosen:** To test the fallback image-rendering pipeline. If a PDF doesn't have a digital text layer, the backend automatically renders the pages as images and passes them to the LLM's vision model.
+   - **Data Description Used:** *"Extract the sender company name, the sender address, the date of the letter, the recipient's name and address, and the printed name of the person who signed it at the bottom."*
+
+5. **`protected.pdf` & `corrupted.pdf` (Failure Mode Tests)**
+   - **Why chosen:** To prove the backend's error handling. These files guarantee the PDF parser throws an error, allowing us to verify that the API gracefully catches it and returns a clean HTTP 400 error (`"PDF is corrupted or password protected"`) without crashing the Node server.
+
+
+## Key Design Decisions & Trade-offs
+
+- **Pure Node Dependencies:** We ensured that the backend relies strictly on pure NPM packages (like `mupdf`, which is compiled to WebAssembly/pure JS and has no native build step). This guarantees that the service deploys cleanly on default cloud buildpacks (like Render) without needing complex Dockerfiles or OS-level dependencies.
+- **Page-by-Page Extraction:** Instead of dumping an entire 20-page PDF into the LLM context window (which would cause massive hallucination and context-loss), we extract data page-by-page and merge the results at the end. *Trade-off:* This is slightly slower and more expensive per document, but vastly increases accuracy.
 
 ## What "Reliable" Means
 
@@ -60,22 +95,14 @@ Every extracted field returns a `status`:
 - **Source Verification:** The LLM is forced to provide a `source_text` quote for every value it extracts. This prevents hallucinations, as it has to justify its extraction with an exact string from the document.
 - **Graceful Merging:** For multi-page PDFs, we process each page individually (to avoid context limits) and safely merge the results across pages. Array fields (like line items) are concatenated across pages, while single-value fields lock in the first "ok" result they find.
 
-## Test Documents
 
-We used several documents to ensure the pipeline is robust across different formats:
-1. **Sample Invoices (Sliced Invoices, Brilliant Directories):** Standard, single-page PDFs to test basic key-value extraction and line-item arrays.
-2. **Student Marks (CSV):** To test spreadsheet processing and analytical queries (e.g. "top 3 students"). The backend intelligently parses the CSV into text instead of trying to OCR it.
-3. **Apollo Workspace Report (21-page PDF):** To test multi-page chunking, merging, and rate-limit handling on large documents. 
 
-## Key Design Decisions & Trade-offs
 
-- **Pure Node Dependencies:** We ensured that the backend relies strictly on pure NPM packages (like `mupdf`, which is compiled to WebAssembly/pure JS and has no native build step). This guarantees that the service deploys cleanly on default cloud buildpacks (like Render) without needing complex Dockerfiles or OS-level dependencies.
-- **Page-by-Page Extraction:** Instead of dumping an entire 20-page PDF into the LLM context window (which would cause massive hallucination and context-loss), we extract data page-by-page and merge the results at the end. *Trade-off:* This is slightly slower and more expensive per document, but vastly increases accuracy.
 
 ## What We Simplified & Future Work
 
 Due to time constraints, this service was built with **Synchronous Processing**. The HTTP request blocks and waits for the LLM to finish extracting the document.
-- **The Problem:** For a 21-page PDF, this takes ~60 seconds, which risks HTTP timeouts on platforms like Vercel (which caps serverless functions at 10-60s).
+- **The Problem:** For a 20-page PDF, this takes ~60 seconds, which risks HTTP timeouts on platforms like Vercel (which caps serverless functions at 10-60s).
 - **Future Solution:** In a real production environment, I would implement an asynchronous queue (e.g., BullMQ + Redis). The `/extract` endpoint would immediately return a `jobId`, and the client would poll a `/status/:jobId` endpoint (or rely on Webhooks) to get the result once processing finishes.
 
 ## Cost Estimate
@@ -86,3 +113,4 @@ Based on our `costTracker` logs (using `gpt-4o`):
 - **Large 20-page Document:** ~$0.06
 
 The average operational cost for standard 1-3 page business documents is under **half a cent per document**.
+I aggressively optimized token usage by natively parsing spreadsheets into raw text (instead of feeding them as images) and by keeping the Schema Compiler prompt concise, ensuring we only pay for the exact text data we need.
