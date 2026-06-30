@@ -74,7 +74,7 @@ We included several specific test documents in the `test-documents/` folder to r
 
 1. **`invoice1.pdf` (Standard Digital PDF)**
    - **Why chosen:** To test basic key-value extraction and the LLM's ability to pull structured line-item arrays from clean, standard business documents.
-   - **Data Description Used:** *"I need the invoice number, the vendor name, the total amount, and a list of all line items with their quantities and prices."*
+   - **Data Description Used:** *"I need the invoice number, the vendor name, the total amount, and a list of all line items with their prices."*
 
 2. **`multipage pdf.pdf` (Academic/Project Report)**
    - **Why chosen:** To test multi-page chunking, merging, and rate-limit handling on dense, text-heavy documents.
